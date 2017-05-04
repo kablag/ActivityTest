@@ -7,7 +7,10 @@ shinyUI(fluidPage(
     fileInput("rdmlFileInput",
               HTML("Upload <b>.RDML</b> file:")),
     uiOutput("targetSlctUI"),
-    verbatimTextOutput("activityModelSummary"),
+    htmlOutput("activityModelSummary"),
+    # tags$ul(
+    #   htmlOutput("activityModelSummary", container = tags$li, class = "custom-li-output")
+    # ),
     plotOutput("calibrationPlot"),
     tableOutput("resultsTable")
   )

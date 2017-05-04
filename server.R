@@ -33,7 +33,7 @@ shinyServer(function(input, output, session) {
 
   mlist <- reactive({
     req(fData())
-    ml1 <- modlist(fData(), model = l5)
+    ml1 <- modlist(fData(), model = l5, verbose = FALSE)
     names(ml1) <- colnames(fData())[-1]
     ml1
   })
@@ -64,17 +64,14 @@ shinyServer(function(input, output, session) {
     lm(Quantity ~ Slope)
   })
 
-  output$activityModelSummary <- renderText({
+  output$activityModelSummary <- renderUI({
     req(activityModel())
-    # aa <<- activityModel()
-    # print(summary(activityModel()))
-    activityModel()$r.squared
+    HTML(sprintf("<div>R<sup>2</sup> = %.4f</div>",
+                 summary(activityModel())$r.squared))
   })
 
   punitsResultsTbl <- reactive({
     req(activityModel())
-    srt <<- slopeResultsTbl()
-    acm <<- activityModel()
     isolate({
       slopeResultsTbl() %>%
         ungroup() %>%
@@ -92,7 +89,6 @@ shinyServer(function(input, output, session) {
   output$resultsTable <- renderTable({
     req(punitsResultsTbl())
     punitsResultsTbl() %>%
-
       select(Well = position,
              Name = sample,
              Type = sample.type,
