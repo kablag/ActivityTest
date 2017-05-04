@@ -6,6 +6,9 @@ shinyUI(fluidPage(
   mainPanel(
     fileInput("rdmlFileInput",
               HTML("Upload <b>.RDML</b> file:")),
-    uiOutput("targetSlctUI")
+    uiOutput("targetSlctUI"),
+    verbatimTextOutput("activityModelSummary"),
+    plotOutput("calibrationPlot"),
+    tableOutput("resultsTable")
   )
 ))
