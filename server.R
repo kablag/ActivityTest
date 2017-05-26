@@ -78,14 +78,22 @@ shinyServer(function(input, output, session) {
     req(fData())
     # ml1 <- modlist(fData(), model = eval(parse(text = input$modelName)),
     #                verbose = FALSE)
+
     ml2 <- map(colnames(fData())[-1],
-               ~ pcrfit(
-                 data.frame(cyc = 1:(addNPoints() + nrow(fData())),
-                            fluor = c(rep(first(fData()[[.]]), addNPoints()),
-                                      fData()[[.]])),
-                 fluo = 2,
-                 model = eval(parse(text = input$modelName))
-               ))
+               ~ {
+                 fpoints <- data.frame(cyc = 1:(addNPoints() + nrow(fData())),
+                                       fluor = c(rep(first(fData()[[.]]), addNPoints()),
+                                                 fData()[[.]]))
+                 tryCatch(
+                   pcrfit(
+                     fpoints,
+                     fluo = 2,
+                     model = eval(parse(text = input$modelName))
+                   ),
+                   error = function(e) NA
+                 )
+               }
+    )
     names(ml2) <- colnames(fData())[-1]
     ml2
   })
