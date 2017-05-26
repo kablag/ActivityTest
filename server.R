@@ -6,9 +6,18 @@ library(shinyWidgets)
 library(stringr)
 library(plotly)
 
+ADD_N_POINTS <- 20
+
 shinyServer(function(input, output, session) {
   session$onSessionEnded(function() {
     stopApp()
+  })
+
+  addNPoints <- reactive({
+    if (input$addNPoints)
+      ADD_N_POINTS
+    else
+      0
   })
 
   rdmlFile <- reactive({
@@ -27,7 +36,8 @@ shinyServer(function(input, output, session) {
     req(rdmlFile(), input$targetSlct)
     rdmlFile()$AsTable(quantity = sample[[react$sample$id]]$quantity$value) %>%
       filter(target == input$targetSlct,
-             adp == TRUE)
+             adp == TRUE) %>%
+      mutate(logQuantity = log(quantity))
   })
 
   output$quantitiesSlctUI <- renderUI({
@@ -66,10 +76,18 @@ shinyServer(function(input, output, session) {
 
   mlist <- reactive({
     req(fData())
-    ml1 <- modlist(fData(), model = eval(parse(text = input$modelName)),
-                   verbose = FALSE)
-    names(ml1) <- colnames(fData())[-1]
-    ml1
+    # ml1 <- modlist(fData(), model = eval(parse(text = input$modelName)),
+    #                verbose = FALSE)
+    ml2 <- map(colnames(fData())[-1],
+               ~ pcrfit(
+                 data.frame(cyc = 1:(addNPoints() + nrow(fData())),
+                            fluor = c(rep(first(fData()[[.]]), addNPoints()),
+                                      fData()[[.]])),
+                 fluo = 2,
+                 model = eval(parse(text = input$modelName))
+               ))
+    names(ml2) <- colnames(fData())[-1]
+    ml2
   })
 
   slopeResultsTbl <- reactive({
@@ -84,17 +102,20 @@ shinyServer(function(input, output, session) {
       )
       description() %>%
         group_by(fdata.name) %>%
-        mutate(cpD1 = effs[[fdata.name]][["cpD1"]],
-               cpD2 = effs[[fdata.name]][["cpD2"]],
-               cpD1fluo = tryCatch(
-                 predict(mlist()[[fdata.name]],
-                         newdata = data.frame(Cycles = cpD1))[1,1],
-                 error = function(e) NA),
-               cpD2fluo = tryCatch(
-                 predict(mlist()[[fdata.name]],
-                         newdata = data.frame(Cycles = cpD2))[1,1],
-                 error = function(e) NA),
-               slope = round((cpD1fluo - cpD2fluo)/(cpD1 - cpD2), 2))
+        mutate(
+          cpD1 = effs[[fdata.name]][["cpD1"]],
+          cpD2 = effs[[fdata.name]][["cpD2"]],
+          cpD1fluo = tryCatch(
+            predict(mlist()[[fdata.name]],
+                    newdata = data.frame(Cycles = cpD1))[1,1],
+            error = function(e) NA),
+          cpD2fluo = tryCatch(
+            predict(mlist()[[fdata.name]],
+                    newdata = data.frame(Cycles = cpD2))[1,1],
+            error = function(e) NA),
+          slope = round((cpD1fluo - cpD2fluo)/(cpD1 - cpD2), 2)
+          # coefE = mlist()[[fdata.name]]$model$e
+        )
     })
   })
 
@@ -105,8 +126,11 @@ shinyServer(function(input, output, session) {
              quantity %in% as.numeric(input$quantitiesSlct))
     Slope <- stdTbl$slope
     Quantity <- stdTbl$quantity
+    # LogQuantity <- stdTbl$logQuantity
+    # CoefE <- stdTbl$coefE
     # lm(log(Quantity) ~ Slope)
     lm(Quantity ~ Slope)
+    # lm(LogQuantity ~ CoefE)
   })
 
   output$activityModelSummary <- renderUI({
@@ -123,6 +147,8 @@ shinyServer(function(input, output, session) {
           # punits = exp(predict(activityModel(), newdata = data.frame(Slope = slope)))
           prediction = list(predict(activityModel(), newdata = data.frame(Slope = slope),
                                     interval = c("confidence"))),
+          # prediction = list(exp(predict(activityModel(), newdata = data.frame(CoefE = coefE),
+          #                           interval = c("confidence")))),
           punits = unlist(prediction)[1] %>% round(2),
           punitsPI = (unlist(prediction)[1] - unlist(prediction)[2]) %>%
             round(2)) %>%
@@ -158,6 +184,7 @@ shinyServer(function(input, output, session) {
              Type = sample.type,
              "Input Units" = quantity,
              "RFU/Cycle" = slope,
+             # "E" = coefE %>% round(2),
              "Pred. Units" = punits,
              "Pred. Units Mean" = punitsText,
              # "Pred. Units Mean" = meanPunits,
@@ -185,13 +212,19 @@ shinyServer(function(input, output, session) {
                       fluor = fData()[[curveName]],
                       prediction = {
                         if (!is.na(selected[1, "punits"])) {
-                          predict(mlist()[[curveName]])$Prediction
+                          predict(mlist()[[curveName]])$Prediction %>%
+                          {
+                            if (addNPoints())
+                              .[-c(1:addNPoints())]
+                            else
+                              .
+                          }
                         } else {
                           NaN
                         }
                       })
-    slopeLine <- data.frame(cyc = c(selected[1, "cpD2"],
-                                    selected[1, "cpD1"]),
+    slopeLine <- data.frame(cyc = c(selected[1, "cpD2"] - addNPoints(),
+                                    selected[1, "cpD1"] - addNPoints()),
                             fluor = c(selected[1, "cpD2fluo"],
                                       selected[1, "cpD1fluo"]))
     ggplot(fdt) +

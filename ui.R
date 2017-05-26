@@ -9,6 +9,8 @@ shinyUI(fluidPage(
               HTML("Upload <b>.RDML</b> file:")),
     fluidRow(
       column(3,
+             checkboxInput("addNPoints", "Add N Points", FALSE)),
+      column(3,
              selectInput("modelName",
                          "Curve Model",
                          c("l7", "l6", "l5", "l4", "b7", "b6", "b5",
@@ -16,7 +18,7 @@ shinyUI(fluidPage(
                            "mak2", "mak2i", "mak3", "mak3i",
                            "lin2", "cm3", "spl3"),
                          "l5")),
-      column(9,
+      column(6,
              htmlOutput("selectedModelDescription"))
       ),
     fluidRow(
@@ -36,7 +38,8 @@ shinyUI(fluidPage(
       column(6,
              plotlyOutput("meltPlot")),
       column(6,
-             plotlyOutput("curvePlot"))),
+             plotlyOutput("curvePlot"))
+      ),
     htmlOutput("activityModelSummary"),
     DT::dataTableOutput("resultsTable")
   )
