@@ -18,8 +18,13 @@ shinyUI(fluidPage(
                            "mak2", "mak2i", "mak3", "mak3i",
                            "lin2", "cm3", "spl3"),
                          "l5")),
-      column(6,
-             htmlOutput("selectedModelDescription"))
+      column(3,
+             htmlOutput("selectedModelDescription")),
+      column(3,
+             radioButtons("calibrationParameter",
+                         "Calibration Parameter",
+                         c("slope", "e"),
+                         "slope"))
       ),
     fluidRow(
       column(4,
