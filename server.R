@@ -177,9 +177,9 @@ shinyServer(function(input, output, session) {
             round(2),
           punitsPI = (punits - {
             if (input$calibrationParameter == "slope")
-              unlist(prediction)[1]
+              unlist(prediction)[2]
             else
-              exp(unlist(prediction)[1])
+              exp(unlist(prediction)[2])
           }) %>%
             round(2)) %>%
         group_by(sample) %>%
