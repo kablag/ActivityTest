@@ -1,3 +1,4 @@
+library(tools)
 library(RDML)
 library(qpcR)
 library(tidyverse)
@@ -22,7 +23,13 @@ shinyServer(function(input, output, session) {
 
   rdmlFile <- reactive({
     req(input$rdmlFileInput)
-    RDML$new(input$rdmlFileInput$datapath)
+    newpath <- paste(input$rdmlFileInput$datapath[1],
+                     file_ext(input$rdmlFileInput$name[1]),
+                     sep = ".")
+    file.rename(input$rdmlFileInput$datapath[1],
+                newpath)
+    # RDML$new(input$rdmlFileInput$datapath)
+    RDML$new(newpath)
   })
 
   output$targetSlctUI <- renderUI({
@@ -100,6 +107,7 @@ shinyServer(function(input, output, session) {
 
   slopeResultsTbl <- reactive({
     req(mlist())
+    req(input$endPointCycle)
     isolate({
       effs <- map(mlist(), ~
                     tryCatch(
@@ -108,6 +116,35 @@ shinyServer(function(input, output, session) {
                                                cpD2 = NA)
                     )
       )
+
+      # stdTbl <- description() %>%
+      #   filter(sample.type == "std",
+      #          quantity %in% as.numeric(input$quantitiesSlct))
+      # Quantity <- stdTbl$quantity
+      # endPointCycle <- {
+      #   if (input$autoEndPointCycle) {
+      #     cycles <- fData()$cyc[1]:last(fData()$cyc)
+      #     r.squares <- map(cycles,
+      #                ~ {
+      #                  currentCyc <- .
+      #                  rfus <- slopeResultsTbl() %>%
+      #                    filter(sample.type == "std") %>%
+      #                    select(fdata.name) %>%
+      #                    unlist() %>%
+      #                    map(~ {
+      #
+      #                      predict(mlist()[[.x]],
+      #                              newdata = data.frame(Cycles = currentCyc))[1,1]
+      #                    }) %>%
+      #                    unlist()
+      #                  summary(lm(Quantity ~ rfus))$r.squared
+      #                }
+      #     ) %>% unlist()
+      #     cycles[cycles == max(r.squares)]
+      #   } else {
+      #     input$endPointCycle
+      #   }
+      # }
       description() %>%
         group_by(fdata.name) %>%
         mutate(
@@ -124,6 +161,10 @@ shinyServer(function(input, output, session) {
           slope = round((cpD1fluo - cpD2fluo)/(cpD1 - cpD2), 2),
           coefE = tryCatch(
             round(mlist()[[fdata.name]][["model"]][["e"]], 2),
+            error = function(e) NA),
+          endPointRFU = tryCatch(
+            predict(mlist()[[fdata.name]],
+                    newdata = data.frame(Cycles = input$endPointCycle))[1,1],
             error = function(e) NA)
         )
     })
@@ -138,11 +179,13 @@ shinyServer(function(input, output, session) {
     Quantity <- stdTbl$quantity
     LogQuantity <- stdTbl$logQuantity
     CoefE <- stdTbl$coefE
+    EndPointRFU <- stdTbl$endPointRFU
     # lm(log(Quantity) ~ Slope)
-    if (input$calibrationParameter == "slope")
-      lm(Quantity ~ Slope)
-    else
-      lm(LogQuantity ~ CoefE)
+    switch(input$calibrationParameter,
+           "slope" =  lm(Quantity ~ Slope),
+           "e" = lm(LogQuantity ~ CoefE),
+           "end point" = lm(Quantity ~ EndPointRFU)
+    )
   })
 
   output$activityModelSummary <- renderUI({
@@ -159,27 +202,42 @@ shinyServer(function(input, output, session) {
           # punits = exp(predict(activityModel(), newdata = data.frame(Slope = slope)))
           prediction = list(predict(activityModel(),
                                     newdata = {
-                                      if (input$calibrationParameter == "slope")
-                                        data.frame(Slope = slope)
-                                      else
-                                        data.frame(CoefE = coefE)
+                                      switch(input$calibrationParameter,
+                                             "slope" =  data.frame(Slope = slope),
+                                             "e" = data.frame(CoefE = coefE),
+                                             "end point" = data.frame(EndPointRFU = endPointRFU)
+                                      )
+                                      # if (input$calibrationParameter == "slope")
+                                      #   data.frame(Slope = slope)
+                                      # else
+                                      #   data.frame(CoefE = coefE)
                                     },
                                     interval = c("confidence"))),
           # prediction = list(exp(predict(activityModel(), newdata = ,
           #                           interval = c("confidence")))),
           punits = unlist(prediction)[1] %>%
           {
-            if (input$calibrationParameter == "slope")
-              .
-            else
-              exp(.)
+            switch(input$calibrationParameter,
+                   "slope" =  .,
+                   "e" = exp(.),
+                   "end point" = .
+            )
+            # if (input$calibrationParameter == "slope")
+            #   .
+            # else
+            #   exp(.)
           } %>%
             round(2),
           punitsPI = (punits - {
-            if (input$calibrationParameter == "slope")
-              unlist(prediction)[2]
-            else
-              exp(unlist(prediction)[2])
+            switch(input$calibrationParameter,
+                   "slope" =  unlist(prediction)[2],
+                   "e" = exp(unlist(prediction)[2]),
+                   "end point" = unlist(prediction)[2]
+            )
+            # if (input$calibrationParameter == "slope")
+            #   unlist(prediction)[2]
+            # else
+            #   exp(unlist(prediction)[2])
           }) %>%
             round(2)) %>%
         group_by(sample) %>%
@@ -294,47 +352,65 @@ shinyServer(function(input, output, session) {
       filter(sample.type == "unkn")
     selectedQuantities <- as.numeric(input$quantitiesSlct)
     p <- {
-      if (input$calibrationParameter == "slope") {
-        ggplot(stdTbl %>%
-                 filter(quantity %in% selectedQuantities),
-               aes(x = quantity,
-                   y = slope)) +
-          geom_smooth(method = "lm", color = "red", fill = "red") +
-          geom_point(size = 3, aes(group = sample)) +
-          geom_point(data = stdTbl %>%
-                       filter(!(quantity %in% selectedQuantities)),
-                     color = "grey60", size = 3, aes(group = sample)) +
-          geom_point(data = unknTbl %>%
-                       filter(punits <= max(selectedQuantities) &
-                                punits >= min(selectedQuantities)),
-                     aes(x = punits, y = slope, group = sample),
-                     shape = 24, fill = "green4", size = 3) +
-          geom_point(data = unknTbl %>%
-                       filter(punits > max(selectedQuantities) |
-                                punits < min(selectedQuantities)),
-                     aes(x = punits, y = slope, group = sample),
-                     shape = 24, fill = "orange", size = 3)
-      } else {
-        ggplot(stdTbl %>%
-                 filter(quantity %in% selectedQuantities),
-               aes(x = logQuantity,
-                   y = coefE)) +
-          geom_smooth(method = "lm", color = "red", fill = "red") +
-          geom_point(size = 3, aes(group = sample)) +
-          geom_point(data = stdTbl %>%
-                       filter(!(quantity %in% selectedQuantities)),
-                     color = "grey60", size = 3, aes(group = sample)) +
-          geom_point(data = unknTbl %>%
-                       filter(punits <= max(selectedQuantities) &
-                                punits >= min(selectedQuantities)),
-                     aes(x = log(punits), y = coefE, group = sample),
-                     shape = 24, fill = "green4", size = 3) +
-          geom_point(data = unknTbl %>%
-                       filter(punits > max(selectedQuantities) |
-                                punits < min(selectedQuantities)),
-                     aes(x = log(punits), y = coefE, group = sample),
-                     shape = 24, fill = "orange", size = 3)
-      }
+      switch(input$calibrationParameter,
+             "slope" =  ggplot(stdTbl %>%
+                                 filter(quantity %in% selectedQuantities),
+                               aes(x = quantity,
+                                   y = slope)) +
+               geom_smooth(method = "lm", color = "red", fill = "red") +
+               geom_point(size = 3, aes(group = sample)) +
+               geom_point(data = stdTbl %>%
+                            filter(!(quantity %in% selectedQuantities)),
+                          color = "grey60", size = 3, aes(group = sample)) +
+               geom_point(data = unknTbl %>%
+                            filter(punits <= max(selectedQuantities) &
+                                     punits >= min(selectedQuantities)),
+                          aes(x = punits, y = slope, group = sample),
+                          shape = 24, fill = "green4", size = 3) +
+               geom_point(data = unknTbl %>%
+                            filter(punits > max(selectedQuantities) |
+                                     punits < min(selectedQuantities)),
+                          aes(x = punits, y = slope, group = sample),
+                          shape = 24, fill = "orange", size = 3),
+             "e" = ggplot(stdTbl %>%
+                            filter(quantity %in% selectedQuantities),
+                          aes(x = logQuantity,
+                              y = coefE)) +
+               geom_smooth(method = "lm", color = "red", fill = "red") +
+               geom_point(size = 3, aes(group = sample)) +
+               geom_point(data = stdTbl %>%
+                            filter(!(quantity %in% selectedQuantities)),
+                          color = "grey60", size = 3, aes(group = sample)) +
+               geom_point(data = unknTbl %>%
+                            filter(punits <= max(selectedQuantities) &
+                                     punits >= min(selectedQuantities)),
+                          aes(x = log(punits), y = coefE, group = sample),
+                          shape = 24, fill = "green4", size = 3) +
+               geom_point(data = unknTbl %>%
+                            filter(punits > max(selectedQuantities) |
+                                     punits < min(selectedQuantities)),
+                          aes(x = log(punits), y = coefE, group = sample),
+                          shape = 24, fill = "orange", size = 3),
+             "end point" = ggplot(stdTbl %>%
+                                    filter(quantity %in% selectedQuantities),
+                                  aes(x = quantity,
+                                      y = endPointRFU)) +
+               geom_smooth(method = "lm", color = "red", fill = "red") +
+               geom_point(size = 3, aes(group = sample)) +
+               geom_point(data = stdTbl %>%
+                            filter(!(quantity %in% selectedQuantities)),
+                          color = "grey60", size = 3, aes(group = sample)) +
+               geom_point(data = unknTbl %>%
+                            filter(punits <= max(selectedQuantities) &
+                                     punits >= min(selectedQuantities)),
+                          aes(x = punits, y = endPointRFU, group = sample),
+                          shape = 24, fill = "green4", size = 3) +
+               geom_point(data = unknTbl %>%
+                            filter(punits > max(selectedQuantities) |
+                                     punits < min(selectedQuantities)),
+                          aes(x = punits, y = endPointRFU, group = sample),
+                          shape = 24, fill = "orange", size = 3)
+      )
     }
     p + theme_bw()
   })

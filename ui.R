@@ -23,16 +23,20 @@ shinyUI(fluidPage(
       column(3,
              radioButtons("calibrationParameter",
                          "Calibration Parameter",
-                         c("slope", "e"),
+                         c("slope", "e", "end point"),
                          "slope"))
       ),
     fluidRow(
-      column(4,
+      column(3,
              uiOutput("targetSlctUI")),
-      column(4,
+      column(3,
              numericInput("dilutionFactor", "Dilution Factor", 5, 1, step = 1)),
-      column(4,
-             numericInput("stockFactor", "Stock Factor", 25, 1, step = 1))
+      column(3,
+             numericInput("stockFactor", "Stock Factor", 25, 1, step = 1)),
+      column(3,
+             numericInput("endPointCycle", "End Point Cycle", 20, 1, step = 1))#,
+      # column(2,
+      #        checkboxInput("autoEndPointCycle", "Auto End Point Cycle", TRUE))
     ),
     uiOutput("quantitiesSlctUI"),
     # tags$ul(
