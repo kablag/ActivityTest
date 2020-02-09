@@ -28,7 +28,6 @@ shinyServer(function(input, output, session) {
                      sep = ".")
     file.rename(input$rdmlFileInput$datapath[1],
                 newpath)
-    # RDML$new(input$rdmlFileInput$datapath)
     RDML$new(newpath)
   })
 
@@ -40,7 +39,8 @@ shinyServer(function(input, output, session) {
   })
 
   description <- reactive({
-    req(rdmlFile(), input$targetSlct)
+    cat("gen description\n")
+    req(input$targetSlct)
     rdmlFile()$AsTable(quantity = sample[[react$sample$id]]$quantity$value) %>%
       filter(target == input$targetSlct,
              adp == TRUE) %>%
@@ -51,11 +51,6 @@ shinyServer(function(input, output, session) {
     req(description())
     quantities <- unique(description()$quantity)
     quantities <- sort(quantities[!is.na(quantities)])
-    # selectInput("quantitiesSlct",
-    #             "Use Input Units",
-    #             quantities,
-    #             quantities,
-    #             multiple = TRUE)
     checkboxGroupButtons(
       inputId = "quantitiesSlct", label = "Use Input Units :",
       choices = quantities,
@@ -68,122 +63,62 @@ shinyServer(function(input, output, session) {
 
   fData <- reactive({
     req(description())
-    rdmlFile()$GetFData(description())
+    as.data.frame(rdmlFile()$GetFData(description()))
   })
 
-  output$selectedModelDescription <- renderUI({
-    req(input$modelName)
-    HTML(
-      paste(eval(parse(text = input$modelName))$name,
-            eval(parse(text = input$modelName))$type,
-            eval(parse(text = input$modelName))$expr,
-            sep = "</br>")
-    )
-  })
 
   mlist <- reactive({
     req(fData())
-    # ml1 <- modlist(fData(), model = eval(parse(text = input$modelName)),
-    #                verbose = FALSE)
-
-    ml2 <- map(colnames(fData())[-1],
-               ~ {
-                 fpoints <- data.frame(cyc = 1:(addNPoints() + nrow(fData())),
-                                       fluor = c(rep(first(fData()[[.]]), addNPoints()),
-                                                 fData()[[.]]))
-                 tryCatch(
-                   pcrfit(
-                     fpoints,
-                     fluo = 2,
-                     model = eval(parse(text = input$modelName))
-                   ),
-                   error = function(e) NA
-                 )
-               }
-    )
-    names(ml2) <- colnames(fData())[-1]
-    ml2
+    cat("calc mlist\n")
+    ml <- lapply(colnames(fData())[-1],
+                  function(cname) {
+                    fpoints <-
+                      data.frame(
+                        cyc = input$slopeRegion[1]:input$slopeRegion[2],
+                        fluor = fData()[
+                          input$slopeRegion[1]:input$slopeRegion[2],
+                          cname])
+                    tryCatch(
+                      lm(fluor ~ cyc, fpoints),
+                      error = function(e) NA
+                    )
+                  })
+    names(ml) <- colnames(fData())[-1]
+    ml
   })
 
   slopeResultsTbl <- reactive({
     req(mlist())
     req(input$endPointCycle)
+    cat("calc slopeResultsTbl\n")
     isolate({
-      effs <- map(mlist(), ~
-                    tryCatch(
-                      efficiency(., plot = FALSE),
-                      error = function(e) list(cpD1 = NA,
-                                               cpD2 = NA)
-                    )
-      )
-
-      # stdTbl <- description() %>%
-      #   filter(sample.type == "std",
-      #          quantity %in% as.numeric(input$quantitiesSlct))
-      # Quantity <- stdTbl$quantity
-      # endPointCycle <- {
-      #   if (input$autoEndPointCycle) {
-      #     cycles <- fData()$cyc[1]:last(fData()$cyc)
-      #     r.squares <- map(cycles,
-      #                ~ {
-      #                  currentCyc <- .
-      #                  rfus <- slopeResultsTbl() %>%
-      #                    filter(sample.type == "std") %>%
-      #                    select(fdata.name) %>%
-      #                    unlist() %>%
-      #                    map(~ {
-      #
-      #                      predict(mlist()[[.x]],
-      #                              newdata = data.frame(Cycles = currentCyc))[1,1]
-      #                    }) %>%
-      #                    unlist()
-      #                  summary(lm(Quantity ~ rfus))$r.squared
-      #                }
-      #     ) %>% unlist()
-      #     cycles[cycles == max(r.squares)]
-      #   } else {
-      #     input$endPointCycle
-      #   }
-      # }
       description() %>%
         group_by(fdata.name) %>%
         mutate(
-          cpD1 = effs[[fdata.name]][["cpD1"]],
-          cpD2 = effs[[fdata.name]][["cpD2"]],
-          cpD1fluo = tryCatch(
-            predict(mlist()[[fdata.name]],
-                    newdata = data.frame(Cycles = cpD1))[1,1],
-            error = function(e) NA),
-          cpD2fluo = tryCatch(
-            predict(mlist()[[fdata.name]],
-                    newdata = data.frame(Cycles = cpD2))[1,1],
-            error = function(e) NA),
-          slope = round((cpD1fluo - cpD2fluo)/(cpD1 - cpD2), 2),
-          coefE = tryCatch(
-            round(mlist()[[fdata.name]][["model"]][["e"]], 2),
-            error = function(e) NA),
+          slope = mlist()[[fdata.name]]$coefficients[2],
           endPointRFU = tryCatch(
             predict(mlist()[[fdata.name]],
-                    newdata = data.frame(Cycles = input$endPointCycle))[1,1],
+                    newdata = data.frame(cyc = input$endPointCycle)),
             error = function(e) NA)
         )
     })
   })
 
   activityModel <- reactive({
-    req(slopeResultsTbl(), input$quantitiesSlct)
+    req(slopeResultsTbl(),
+        input$quantitiesSlct)
     stdTbl <- slopeResultsTbl() %>%
       filter(sample.type == "std",
              quantity %in% as.numeric(input$quantitiesSlct))
     Slope <- stdTbl$slope
     Quantity <- stdTbl$quantity
     LogQuantity <- stdTbl$logQuantity
-    CoefE <- stdTbl$coefE
+    # CoefE <- stdTbl$coefE
     EndPointRFU <- stdTbl$endPointRFU
     # lm(log(Quantity) ~ Slope)
     switch(input$calibrationParameter,
            "slope" =  lm(Quantity ~ Slope),
-           "e" = lm(LogQuantity ~ CoefE),
+           # "e" = lm(LogQuantity ~ CoefE),
            "end point" = lm(Quantity ~ EndPointRFU)
     )
   })
@@ -204,7 +139,7 @@ shinyServer(function(input, output, session) {
                                     newdata = {
                                       switch(input$calibrationParameter,
                                              "slope" =  data.frame(Slope = slope),
-                                             "e" = data.frame(CoefE = coefE),
+                                             # "e" = data.frame(CoefE = coefE),
                                              "end point" = data.frame(EndPointRFU = endPointRFU)
                                       )
                                       # if (input$calibrationParameter == "slope")
@@ -219,29 +154,24 @@ shinyServer(function(input, output, session) {
           {
             switch(input$calibrationParameter,
                    "slope" =  .,
-                   "e" = exp(.),
+                   # "e" = exp(.),
                    "end point" = .
             )
-            # if (input$calibrationParameter == "slope")
-            #   .
-            # else
-            #   exp(.)
+
           } %>%
             round(2),
           punitsPI = (punits - {
             switch(input$calibrationParameter,
                    "slope" =  unlist(prediction)[2],
-                   "e" = exp(unlist(prediction)[2]),
+                   # "e" = exp(unlist(prediction)[2]),
                    "end point" = unlist(prediction)[2]
             )
-            # if (input$calibrationParameter == "slope")
-            #   unlist(prediction)[2]
-            # else
-            #   exp(unlist(prediction)[2])
+
           }) %>%
             round(2)) %>%
         group_by(sample) %>%
         mutate(
+          sampleName = str_extract(sample, "[:alpha:]+"),
           meanPunits = mean(punits) %>%
             round(2),
           meanPunitsPI = mean(punitsPI) %>%
@@ -250,17 +180,18 @@ shinyServer(function(input, output, session) {
     })
   })
 
-  output$resultsTable <- DT::renderDataTable({
+  results <- reactive({
     req(punitsResultsTbl())
     calcStock <- function(dilutionN, meanPunits, stockFactor, dilutionFactor) {
-      if (is.na(dilutionN))
-        dilutionN <- 1
+      dilutionN[is.na(dilutionN)] <- 1
       meanPunits * stockFactor * dilutionFactor ^ (dilutionN - 1)
+      # meanPunits * stockFactor * dilutionFactor * dilutionN
     }
     punitsResultsTbl() %>%
       mutate(
         dilutionN = str_extract(sample, "[0-9]+") %>%
           as.integer(),
+        dilution = input$dilutionFactor ^ (dilutionN - 1),
         stockUnits = calcStock(dilutionN, meanPunits,
                                input$stockFactor, input$dilutionFactor),
         stockUnitsPI = calcStock(dilutionN, meanPunitsPI,
@@ -271,17 +202,32 @@ shinyServer(function(input, output, session) {
              Name = sample,
              Type = sample.type,
              "Input Units" = quantity,
-             "RFU/Cycle" = slope,
-             "E" = coefE,
+             "RFU ~ Cycle" = slope,
+             # "E" = coefE,
              "Pred. Units" = punits,
              "Pred. Units Mean" = punitsText,
              # "Pred. Units Mean" = meanPunits,
              # "Pred. Units ± Mean (PI)" = meanPunitsPI,
              "Dilution N" = dilutionN,
+             "Dilution" = dilution,
              # "Stock Units" = stockUnits,
              # "Stock Units ± (PI)" = stockUnitsPI
              "Stock Units" = sunitsText
-      ) %>%
+      )
+  })
+
+  output$unknSmplUI <- renderUI({
+    req(punitsResultsTbl())
+    selectInput("unknSmplSlct",
+                "Show samples",
+                unique(punitsResultsTbl() %>%
+                         filter(sample.type == "unkn") %>%
+                         .$sampleName))
+  })
+
+  output$resultsTable <- DT::renderDataTable({
+    req(results())
+    results() %>%
       DT::datatable(
         data = .,
         options = list(paging = FALSE),
@@ -296,32 +242,15 @@ shinyServer(function(input, output, session) {
                             [input$resultsTable_rows_selected, "position"])) %>%
       as.data.frame()
     curveName <- selected[1, "fdata.name"]
+    prediction <- predict(mlist()[[curveName]])
     fdt <- data.frame(cyc = fData()[["cyc"]],
-                      fluor = fData()[[curveName]],
-                      prediction = {
-                        if (!is.na(selected[1, "punits"])) {
-                          predict(mlist()[[curveName]])$Prediction %>%
-                          {
-                            if (addNPoints())
-                              .[-c(1:addNPoints())]
-                            else
-                              .
-                          }
-                        } else {
-                          NaN
-                        }
-                      })
-    slopeLine <- data.frame(cyc = c(selected[1, "cpD2"] - addNPoints(),
-                                    selected[1, "cpD1"] - addNPoints()),
-                            fluor = c(selected[1, "cpD2fluo"],
-                                      selected[1, "cpD1fluo"]))
+                      fluor = fData()[[curveName]])
+
+    slopeLine <- data.frame(cyc = input$slopeRegion,
+                            fluor = c(prediction[1], tail(prediction, 1)))
     ggplot(fdt) +
-      geom_point(aes(cyc, fluor)) +
-      geom_line(aes(x = cyc, y = prediction), color = "grey") +
-      {
-        if (input$calibrationParameter == "slope")
-          geom_line(data = slopeLine, aes(x = cyc, y = fluor), color = "red")
-      } +
+      geom_line(aes(cyc, fluor)) +
+      geom_line(data = slopeLine, aes(x = cyc, y = fluor), color = "red") +
       theme_bw()
   })
 
@@ -344,12 +273,13 @@ shinyServer(function(input, output, session) {
   })
 
   output$calibrationPlot <- renderPlotly({
-    req(punitsResultsTbl())
+    req(punitsResultsTbl(),
+        input$unknSmplSlct)
     # input$quantitiesSlct
     stdTbl <- punitsResultsTbl() %>%
       filter(sample.type == "std")
     unknTbl <- punitsResultsTbl() %>%
-      filter(sample.type == "unkn")
+      filter(sample.type == "unkn" & sampleName == input$unknSmplSlct)
     selectedQuantities <- as.numeric(input$quantitiesSlct)
     p <- {
       switch(input$calibrationParameter,
@@ -371,25 +301,6 @@ shinyServer(function(input, output, session) {
                             filter(punits > max(selectedQuantities) |
                                      punits < min(selectedQuantities)),
                           aes(x = punits, y = slope, group = sample),
-                          shape = 24, fill = "orange", size = 3),
-             "e" = ggplot(stdTbl %>%
-                            filter(quantity %in% selectedQuantities),
-                          aes(x = logQuantity,
-                              y = coefE)) +
-               geom_smooth(method = "lm", color = "red", fill = "red") +
-               geom_point(size = 3, aes(group = sample)) +
-               geom_point(data = stdTbl %>%
-                            filter(!(quantity %in% selectedQuantities)),
-                          color = "grey60", size = 3, aes(group = sample)) +
-               geom_point(data = unknTbl %>%
-                            filter(punits <= max(selectedQuantities) &
-                                     punits >= min(selectedQuantities)),
-                          aes(x = log(punits), y = coefE, group = sample),
-                          shape = 24, fill = "green4", size = 3) +
-               geom_point(data = unknTbl %>%
-                            filter(punits > max(selectedQuantities) |
-                                     punits < min(selectedQuantities)),
-                          aes(x = log(punits), y = coefE, group = sample),
                           shape = 24, fill = "orange", size = 3),
              "end point" = ggplot(stdTbl %>%
                                     filter(quantity %in% selectedQuantities),
