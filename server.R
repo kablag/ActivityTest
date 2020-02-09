@@ -230,7 +230,10 @@ shinyServer(function(input, output, session) {
     results() %>%
       DT::datatable(
         data = .,
-        options = list(paging = FALSE),
+        extensions = 'Buttons',
+        options = list(paging = FALSE,
+                       dom = 'Bfrtip',
+                       buttons = c('copy', 'csv', 'excel')),
         selection = "single")
   })
 
