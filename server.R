@@ -107,6 +107,7 @@ shinyServer(function(input, output, session) {
   activityModel <- reactive({
     req(slopeResultsTbl(),
         input$quantitiesSlct)
+    cat("calc activityModel\n")
     stdTbl <- slopeResultsTbl() %>%
       filter(sample.type == "std",
              quantity %in% as.numeric(input$quantitiesSlct))
@@ -125,12 +126,14 @@ shinyServer(function(input, output, session) {
 
   output$activityModelSummary <- renderUI({
     req(activityModel())
+    cat("printing activityModelSummary\n")
     HTML(sprintf("<div>R<sup>2</sup> = %.4f</div>",
                  summary(activityModel())$r.squared))
   })
 
   punitsResultsTbl <- reactive({
     req(activityModel())
+    cat("making punitsResultsTbl\n")
     isolate({
       slopeResultsTbl() %>%
         mutate(
@@ -182,6 +185,7 @@ shinyServer(function(input, output, session) {
 
   results <- reactive({
     req(punitsResultsTbl())
+    cat("calc results\n")
     calcStock <- function(dilutionN, meanPunits, stockFactor, dilutionFactor) {
       dilutionN[is.na(dilutionN)] <- 1
       meanPunits * stockFactor * dilutionFactor ^ (dilutionN - 1)
@@ -218,15 +222,20 @@ shinyServer(function(input, output, session) {
 
   output$unknSmplUI <- renderUI({
     req(punitsResultsTbl())
+    snames <- unique(punitsResultsTbl() %>%
+                       filter(sample.type == "unkn") %>%
+                       .$sampleName)
+    if (length(snames) == 0)
+      snames <- unique(punitsResultsTbl()$sampleName)
     selectInput("unknSmplSlct",
                 "Show samples",
-                unique(punitsResultsTbl() %>%
-                         filter(sample.type == "unkn") %>%
-                         .$sampleName))
+                snames)
   })
 
   output$resultsTable <- DT::renderDataTable({
-    req(results())
+    # req(results())
+    req(input$unknSmplSlct)
+    cat("making resultsTable\n")
     results() %>%
       DT::datatable(
         data = .,
@@ -239,6 +248,7 @@ shinyServer(function(input, output, session) {
 
   output$curvePlot <- renderPlotly({
     req(input$resultsTable_rows_selected)
+    cat("drawing curvePlot\n")
     selected <- punitsResultsTbl() %>%
       filter(position ==
                as.character(punitsResultsTbl()
@@ -259,6 +269,7 @@ shinyServer(function(input, output, session) {
 
   output$meltPlot <- renderPlotly({
     req(input$resultsTable_rows_selected)
+    cat("drawing meltPlot\n")
     selected <- punitsResultsTbl() %>%
       filter(position ==
                as.character(punitsResultsTbl()
@@ -278,6 +289,7 @@ shinyServer(function(input, output, session) {
   output$calibrationPlot <- renderPlotly({
     req(punitsResultsTbl(),
         input$unknSmplSlct)
+    cat("drawing calibrationPlot\n")
     # input$quantitiesSlct
     stdTbl <- punitsResultsTbl() %>%
       filter(sample.type == "std")
@@ -328,7 +340,4 @@ shinyServer(function(input, output, session) {
     }
     p + theme_bw()
   })
-
-
-
 })
