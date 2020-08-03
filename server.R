@@ -14,6 +14,7 @@ shinyServer(function(input, output, session) {
     stopApp()
   })
 
+
   addNPoints <- reactive({
     if (input$addNPoints)
       ADD_N_POINTS
@@ -82,7 +83,7 @@ shinyServer(function(input, output, session) {
 
   output$individualSlopeRegionsUI <- renderUI({
     req(description())
-    cat("creating individualSlopeRegionsUI")
+    cat("creating individualSlopeRegionsUI\n")
     lapply(unique(description()$sample), function(sname)
       sliderInput(paste0("slopeRegion_", sname),
                   paste0("Slope Region: ", sname),
