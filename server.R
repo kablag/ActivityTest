@@ -92,32 +92,36 @@ shinyServer(function(input, output, session) {
   })
 
   mlist <- reactive({
-    req(fData())
-    cat("calc mlist\n")
-    ml <- lapply(colnames(fData())[-1],
-                  function(cname) {
-                    slopeRegion <- {
-                      if (input$useGlobalSlope)
-                        input$slopeRegion
-                      else {
-                        sname <- description()[fdata.name == cname, c(sample)]
-                        input[[paste0("slopeRegion_", sname)]]
-                      }
-                    }
+    req(input$recalcBtn)
+    isolate({
+      req(fData())
+      cat("calc mlist\n")
+      ml <- lapply(colnames(fData())[-1],
+                   function(cname) {
+                     slopeRegion <- {
+                       if (input$useGlobalSlope)
+                         input$slopeRegion
+                       else {
+                         sname <- description()[fdata.name == cname, c(sample)]
+                         input[[paste0("slopeRegion_", sname)]]
+                       }
+                     }
 
-                    fpoints <-
-                      data.frame(
-                        cyc = slopeRegion[1]:slopeRegion[2],
-                        fluor = fData()[
-                          slopeRegion[1]:slopeRegion[2],
-                          cname])
-                    tryCatch(
-                      lm(fluor ~ cyc, fpoints),
-                      error = function(e) NA
-                    )
-                  })
-    names(ml) <- colnames(fData())[-1]
-    ml
+                     fpoints <-
+                       data.frame(
+                         cyc = slopeRegion[1]:slopeRegion[2],
+                         fluor = fData()[
+                           slopeRegion[1]:slopeRegion[2],
+                           cname])
+                     tryCatch(
+                       lm(fluor ~ cyc, fpoints),
+                       error = function(e) NA
+                     )
+                   })
+      names(ml) <- colnames(fData())[-1]
+      ml
+
+    })
   })
 
   slopeResultsTbl <- reactive({
@@ -160,7 +164,7 @@ shinyServer(function(input, output, session) {
   output$activityModelSummary <- renderUI({
     req(activityModel())
     cat("printing activityModelSummary\n")
-    HTML(sprintf("<div>R<sup>2</sup> = %.4f</div>",
+    HTML(sprintf("<div><b>R<sup>2</sup> = %.4f</b></div>",
                  summary(activityModel())$r.squared))
   })
 
@@ -187,14 +191,14 @@ shinyServer(function(input, output, session) {
           # prediction = list(exp(predict(activityModel(), newdata = ,
           #                           interval = c("confidence")))),
           punits = unlist(prediction)[1] %>%
-          {
-            switch(input$calibrationParameter,
-                   "slope" =  .,
-                   # "e" = exp(.),
-                   "end point" = .
-            )
+            {
+              switch(input$calibrationParameter,
+                     "slope" =  .,
+                     # "e" = exp(.),
+                     "end point" = .
+              )
 
-          } %>%
+            } %>%
             round(2),
           punitsPI = (punits - {
             switch(input$calibrationParameter,
@@ -229,10 +233,13 @@ shinyServer(function(input, output, session) {
         dilutionN = str_extract(sample, "[0-9]+") %>%
           as.integer(),
         dilution = input$dilutionFactor ^ (dilutionN - 1),
+        stockFactor = ifelse(sample.type == "std",
+                             1,
+                             input$stockFactor),
         stockUnits = calcStock(dilutionN, meanPunits,
-                               input$stockFactor, input$dilutionFactor),
+                               stockFactor, input$dilutionFactor),
         stockUnitsPI = calcStock(dilutionN, meanPunitsPI,
-                                 input$stockFactor, input$dilutionFactor),
+                                 stockFactor, input$dilutionFactor),
         punitsText = sprintf("%.2f ± %.2f", meanPunits, meanPunitsPI),
         sunitsText = sprintf("%.2f ± %.2f", stockUnits, stockUnitsPI)) %>%
       select(Well = position,

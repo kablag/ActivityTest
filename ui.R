@@ -57,16 +57,17 @@ shinyUI(fluidPage(
               #   htmlOutput("activityModelSummary", container = tags$li, class = "custom-li-output")
               # ),
               uiOutput("useWellsUI"),
+              actionButton("recalcBtn", "Recalc"),
               uiOutput("unknSmplUI"),
               # actionButton("applySlopes", "Apply"),
               plotlyOutput("calibrationPlot"),
+              htmlOutput("activityModelSummary"),
               fluidRow(
                 column(6,
                        plotlyOutput("meltPlot")),
                 column(6,
                        plotlyOutput("curvePlot"))
               ),
-              htmlOutput("activityModelSummary"),
               DT::dataTableOutput("resultsTable")
     ),
 
