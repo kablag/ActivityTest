@@ -10,9 +10,9 @@ shinyUI(fluidPage(
     # Main Panel --------------------------------------------------------------
 
 
-    mainPanel("Main",
+    mainPanel(
               fileInput("rdmlFileInput",
-                        HTML("Upload <b>.RDML</b> file:")),
+                        HTML("Upload <b>.RDML</b> or <b>.xlsx</b> file:")),
               fluidRow(
                 # column(3,
                 #        checkboxInput("addNPoints", "Add N Points", FALSE)),
